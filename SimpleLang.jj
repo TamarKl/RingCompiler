@@ -1,0 +1,232 @@
+
+PARSER_BEGIN(SimpleLang)
+
+public class SimpleLang {
+    public static String code = "";
+    public static String javaCodeStart = "";
+    public static java.util.HashSet<String> symtable = new java.util.HashSet<String>();
+    public static void main(String[] args) {
+        SimpleLang p = null;
+        java.io.FileWriter out = null;
+        java.io.File javaTarget = null;
+        
+        System.out.println("Reading from file " + args[0]);
+        try {
+            p = new SimpleLang(new java.io.FileInputStream(args[0]));
+            javaTarget = new java.io.File(args[1]);
+            out = new java.io.FileWriter(javaTarget);
+            javaCodeStart = "public class " + javaTarget.getName() + "{" +
+                "\npublic static void main(String[] args){\n";
+        }
+        catch(java.io.FileNotFoundException e) {
+            System.out.println("Error in reading file");
+        }
+        catch(java.io.IOException e) {
+            System.out.println("Error in Writing");
+        }
+        
+        
+        try {
+            p.Program();
+            code = javaCodeStart + code + "\n" + "}" + "\n" + "}";
+            
+            out.write(code);
+            out.close();
+            System.out.println("Parsing was done successfully");
+        }
+        catch(ParseException e) {
+            System.out.println("Error in parsing");
+            System.out.println(e.getMessage());
+        }
+        catch(TokenMgrError e) {
+            System.out.println("There was an error in analyzing the code");
+            System.out.println(e.getMessage());
+        }
+        catch(java.io.IOException e) {
+            System.out.println("Error in Writing");
+        }
+    }
+
+}
+
+PARSER_END(SimpleLang)
+
+SKIP: {
+    " "
+|   "\t"
+|   "\n"
+|   "\r"
+|   <"//" (~["\n", "\r"])* ("\n" | "\r" | "\r\n")>
+|   <"/*" (~[])+ "*/">
+}
+
+// Reserved words and operators
+TOKEN: {
+    <FOR: "for">
+|   <ENDBLOCK: "<-->">
+|   <EQUAL: "=">
+|   <COMMA: ",">
+|   <COLON: ":">
+|   <MULT: "*">
+|   <PLUS: "+">
+|   <MINUS: "-">
+|   <DIV: "/">
+|   <LB: "(">
+|   <RB: ")">
+
+}   
+
+// Identifiers etc.
+TOKEN: {
+    <#LETTER: ["a"-"z", "A"-"Z"]>
+|   <#DIGIT: ["0"-"9"]>
+|   <IDENTIFIER: <LETTER>(<LETTER>| "_"| <DIGIT>)*>
+|   <#INT: (<DIGIT>)+>
+|   <#REAL: (<DIGIT>)+"."(<DIGIT>)+>
+|   <NUMBER: (<INT> | <REAL>)>
+|   <STRING: "\""(~["\n", "\r"])* "\"">
+|   <PRINT: ("s"|"S")("E"|"e")("E"|"e")>
+}
+
+
+
+void Program() : {String s1, s2;}
+{
+    s1 = Statement()
+    s2 = Statements()
+    <EOF>
+    {   String vars = "";
+        for(java.util.Iterator<String> it = symtable.iterator(); it.hasNext();) 
+            vars += "\ndouble " + it.next() + ";";
+        code = vars + s1 + s2;
+    }
+}
+
+String Statement() : {String res;}
+{
+    res = Assign()
+    {return res; }
+|   res = Print()
+    {return res; }
+|   res = For()
+    {return res; }
+}
+
+String Statements() : {String s1, s2;}
+{
+    s1 = Statement()
+    s2 = Statements()
+    {return s1 + s2; }
+|   {}  {return "";}
+}
+
+String Assign() : {Token t;
+                 String exp; }
+{
+    t = <IDENTIFIER>    
+    <EQUAL>
+    exp = E()       {
+                            if(!symtable.contains(t.image))
+                                symtable.add(t.image);
+                            return "\n" + t.image + " = " + 
+                                                exp + ";"; 
+                    }
+}
+
+String E() : {String t1, t2;}
+{
+    t1 = Term()
+    t2 = EPrime()
+    {return t1 + t2; }
+}
+
+String EPrime() : {String t1, t2;}
+{
+    <PLUS>
+    t1 = Term()
+    t2 = EPrime()   {return " + " + t1 + t2; }
+|   <MINUS>
+    t1 = Term()
+    t2 = EPrime()   {return " - " + t1 + t2; }
+|   {}              {return ""; }
+}
+
+String Term() : {String t1, t2;}
+{
+    t1 = Factor()
+    t2 = TermPrime()
+    { return t1 + t2; }
+}
+
+String TermPrime() : {String t1, t2;}
+{
+    <MULT>
+    t1 = Factor()
+    t2 = TermPrime()    {return " * " + t1 + t2; }
+|   <DIV>
+    t1 = Factor()
+    t2 = TermPrime()    {return " / " + t1 + t2; }
+|   {}                  {return ""; }
+}
+
+String Factor() : {String res;
+                    Token t;}
+{
+    <LB>
+    res = E()
+    <RB>                { return "(" + res + ")"; }
+|   t = <NUMBER>        { return t.image; }
+|   t = <IDENTIFIER>    { return t.image; }
+}
+
+String Print() : { String res = "", args = "";} 
+{
+    <PRINT>     { res = "\nSystem.out.println(";}
+    args = ArgsToPrint()    { res = res + args + ");";}
+    {return res;}
+}
+String ArgsToPrint() : {String t1; 
+						String exp="";
+					   }
+{
+	t1=Args() {exp+=t1;}
+	<PLUS>
+	ArgsToPrint()
+|   t1=Args() { exp+=t1;
+				return exp;}
+
+}
+String Args() : { Token t;} 
+{
+    t = <STRING>    { return t.image; }
+|   t = <IDENTIFIER>    { if(!symtable.contains(t.image))
+                            throw new ParseException(t.image + " undefined");
+                          return t.image; 
+                        }
+
+}
+
+String For() :    {Token t1, t2;
+                 String exp, body;   
+                }
+{
+    <FOR> 
+    t1 = <IDENTIFIER>
+    <EQUAL>
+    t2 = <NUMBER>
+    <COMMA>
+    exp = E()
+    <COLON>
+    body = Statements()
+    <ENDBLOCK>
+    {
+        String res =  "\nfor(double " + t1.image + " = " + t2.image + "; " 
+                        + t1.image + " <= " + exp + "; " + 
+                        t1.image + "++) {" + body + "\n}";
+        return res;
+    }
+}
+
+
+
+
