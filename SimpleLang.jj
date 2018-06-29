@@ -2,6 +2,7 @@
 PARSER_BEGIN(SimpleLang)
 
 public class SimpleLang {
+    public static int counterBreaks=0;
     public static String code = "";
     public static String javaCodeStart = "";
     public static java.util.HashSet<String> symtable = new java.util.HashSet<String>();
@@ -15,8 +16,8 @@ public class SimpleLang {
             p = new SimpleLang(new java.io.FileInputStream(args[0]));
             javaTarget = new java.io.File(args[1]);
             out = new java.io.FileWriter(javaTarget);
-            javaCodeStart = "public class " + javaTarget.getName() + "{" +
-                "\npublic static void main(String[] args){\n";
+            javaCodeStart = "import java.util.Scanner;\npublic class " + javaTarget.getName() + "{" +
+                "\npublic static void main(String[] args){\nScanner console = new Scanner(System.in);\n";
         }
         catch(java.io.FileNotFoundException e) {
             System.out.println("Error in reading file");
@@ -62,8 +63,7 @@ SKIP: {
 
 // Reserved words and operators
 TOKEN: {
-    <FOR: "for">
-|   <ENDBLOCK: "<-->">
+    <ENDBLOCK: "<-->">
 |   <EQUAL: "=">
 |   <COMMA: ",">
 |   <COLON: ":">
@@ -73,6 +73,21 @@ TOKEN: {
 |   <DIV: "/">
 |   <LB: "(">
 |   <RB: ")">
+|   <NOTEQUAL: "!=">
+|   <SMALL: "<">
+|   <BIG: ">">
+|   <PRINT: ("s"|"S")("E"|"e")("e"|"E")>
+|	<GIVE:  ("G"|"g")("I"|"i")("V"|"v")("E"|"e")>
+|   <WHILE: ("w"|"W")("H"|"h")("I"|"i")("L"|"l")("E"|"e")>
+|	<AND: ("a"|"A")("n"|"N")("d"|"D")>
+|   <OR:   ("O"|"o")("R"|"r")>
+|   <END: ("e"|"E")("N"|"n")("D"|"d")>
+|   <IF: ("I"|"i")("f"|"F")>
+|   <BUT: ("B"|"b")("u"|"U")("T"|"t")>
+|	<OK: ("O"|"o")("k"|"K")>
+|   <ELSE: ("E"|"e")("L"|"l")("S"|"s")("E"|"e")>
+|	<NEW_LINE: "nl">
+|   <EXIT: ("E"|"e")("X"|"x")("I"|"i")("T"|"t")>
 
 }   
 
@@ -85,31 +100,32 @@ TOKEN: {
 |   <#REAL: (<DIGIT>)+"."(<DIGIT>)+>
 |   <NUMBER: (<INT> | <REAL>)>
 |   <STRING: "\""(~["\n", "\r"])* "\"">
-|   <PRINT: ("s"|"S")("E"|"e")("E"|"e")>
+
 }
 
 
 
 void Program() : {String s1, s2;}
 {
-    s1 = Statement()
     s2 = Statements()
     <EOF>
     {   String vars = "";
         for(java.util.Iterator<String> it = symtable.iterator(); it.hasNext();) 
             vars += "\ndouble " + it.next() + ";";
-        code = vars + s1 + s2;
+        code = vars + s2;
     }
 }
 
-String Statement() : {String res;}
-{
-    res = Assign()
+String Statement() : {String res; int counter=0;counterBreaks=0;}
+{ 
+ res = Print()
     {return res; }
-|   res = Print()
-    {return res; }
-|   res = For()
-    {return res; }
+ |   res = Assign()
+    {return res+"\n"; }
+| res=Get(){return res;}
+| res=While(++counter){return res;}
+| res=If(){return res;}
+	
 }
 
 String Statements() : {String s1, s2;}
@@ -126,9 +142,9 @@ String Assign() : {Token t;
     t = <IDENTIFIER>    
     <EQUAL>
     exp = E()       {
-                            if(!symtable.contains(t.image))
-                                symtable.add(t.image);
-                            return "\n" + t.image + " = " + 
+                            if(!symtable.contains(t.image.toLowerCase()))
+                                symtable.add(t.image.toLowerCase());
+                            return "\n" + t.image.toLowerCase() + " = " + 
                                                 exp + ";"; 
                     }
 }
@@ -176,7 +192,9 @@ String Factor() : {String res;
     res = E()
     <RB>                { return "(" + res + ")"; }
 |   t = <NUMBER>        { return t.image; }
-|   t = <IDENTIFIER>    { return t.image; }
+|   t = <IDENTIFIER>    { if(!symtable.contains(t.image.toLowerCase()))
+                                throw new ParseException(t.image.toLowerCase() + " undefined");
+                            return t.image.toLowerCase(); }
 }
 
 String Print() : { String res = "", args = "";} 
@@ -185,47 +203,232 @@ String Print() : { String res = "", args = "";}
     args = ArgsToPrint()    { res = res + args + ");";}
     {return res;}
 }
-String ArgsToPrint() : {String t1; 
+String ArgsToPrint() : {String t1,t2; 
 						String exp="";
 					   }
 {
 	t1=Args() {exp+=t1;}
-	<PLUS>
-	ArgsToPrint()
-|   t1=Args() { exp+=t1;
-				return exp;}
-
+	t2=ArgsConToPrint(){exp+=t2;}
+	{return exp;}
 }
+
+String ArgsConToPrint() : {String res="",s,s2;}
+{
+	<PLUS>
+	s=Args() {res+="+"+s; }
+	s2=ArgsConToPrint(){    if(s2!="")
+								res+=s2;
+							return res;}
+|
+	{}{return res;}
+}
+
+
 String Args() : { Token t;} 
 {
-    t = <STRING>    { return t.image; }
-|   t = <IDENTIFIER>    { if(!symtable.contains(t.image))
-                            throw new ParseException(t.image + " undefined");
-                          return t.image; 
+    t = <STRING>    { 	return t.image.toLowerCase(); }
+|   t = <IDENTIFIER>    { if(!symtable.contains(t.image.toLowerCase()))
+                            throw new ParseException(t.image.toLowerCase() + " undefined");
+                          return t.image.toLowerCase(); 
                         }
-
+|   t = <NEW_LINE>  { return "\"\\n\"";}
 }
 
-String For() :    {Token t1, t2;
-                 String exp, body;   
-                }
+String Get() : {Token t;}
 {
-    <FOR> 
-    t1 = <IDENTIFIER>
-    <EQUAL>
-    t2 = <NUMBER>
-    <COMMA>
-    exp = E()
-    <COLON>
-    body = Statements()
-    <ENDBLOCK>
-    {
-        String res =  "\nfor(double " + t1.image + " = " + t2.image + "; " 
-                        + t1.image + " <= " + exp + "; " + 
-                        t1.image + "++) {" + body + "\n}";
-        return res;
-    }
+<GIVE> 
+t=<IDENTIFIER> 
+{ if(!symtable.contains(t.image.toLowerCase()))
+                                symtable.add(t.image.toLowerCase());
+              String res ="\n"+t.image.toLowerCase()+"=console.nextInt();\n";
+			 return res;
+			 }
 }
+
+String While(int counter) : {String t1,t2,res;}
+{
+<WHILE>
+t1=Expression()
+t2=expConWhile(counter)
+<END>{      
+            if (counterBreaks>0){
+                counterBreaks--;
+                res="while ("+t1+") {\n"+t2+"\n}\nbreak;\n";
+                return res;
+            }
+            res="while ("+t1+") {\n"+t2+"\n}\n";
+			 return res;
+			}			
+
+}
+String expConWhile (int counter) : {String t2;}
+{
+t2=StatementsWhile(counter){return t2;}
+
+
+}
+
+String expIfConWhile(int counter):{String t1,t2,t3,res=" ";}
+ {
+ <BUT>
+  t1=Expression()
+  t2=expConWhile(counter){res+="\nelse if("+t1+") {"+t2+"\n}\n";}
+  t3=expIfConWhile(counter){res+=t3;return res;}
+  |
+  <ELSE>
+  t2=expConWhile(counter){res+="else {\n"+t2+"\n}";}
+  t3=expIfConWhile(counter){res+=t3;return res;}
+  |
+  {}{return res;}
+ }
+ 
+ 
+String StatementsWhile(int counter) : {String s1, s2;}
+{
+    s1 = StatementWhile(counter)
+    s2 = StatementsWhile(counter)
+    {return s1 + s2; }
+|   {}  {return "";}
+}
+String StatementWhile(int counter) : {String res;String i;}
+{ 
+ res = Print()
+    {return res; }
+ |   res = Assign()
+    {return res+"\n"; }
+| res=Get(){return res;}
+| res=While(++counter){return res;}
+| res=IfInWhile(counter){return res;}
+| <EXIT> i=ExitCommand(counter){   return i;}
+	
+}
+String ExitCommand (int counter) : {Token t,t1;} 
+{
+t=<MINUS><NUMBER>
+    {  
+                throw new ParseException("exit command exception");
+    }
+|t=<NUMBER>{    System.out.println("counter= "+Integer.toString(counter)+" gotten: "+t.image);
+                if(Integer.parseInt(t.image)>counter)
+                    throw new ParseException("exit command exception");
+                counterBreaks=Integer.parseInt(t.image)-1;
+                if(Integer.parseInt(t.image)!=0)
+                    return "\nbreak;";
+                return "";
+
+}
+| {} {return "\nbreak;";}
+}
+String IfInWhile (int counter) : {String t1,t2,t3,res;}
+{
+<IF>
+t1=Expression()
+t2=expConWhile(counter)
+t3=expIfConWhile(counter)
+<OK>{res="if("+t1+") {"+t2+"\n}\n"+t3;
+			 return res;
+	}
+}
+String expCon () : {String t2;}
+{
+t2=Statements(){return t2;}
+
+}
+
+String Expression() : {String t1,t2 ; String res;}
+{
+t1=EQ()
+res=ExpressionCon(){if(res=="")
+						return t1;
+					return "( "+t1+" )"+res;
+					}
+}
+
+
+String ExpressionCon () : {String res, t2;}
+{
+<AND>
+t2=Expression(){res="&&("+t2+")";
+				return res;
+				}
+|
+<OR>
+t2=Expression(){res="||("+t2+")";
+				return res;
+				}
+|
+{}{return "";}
+}
+
+
+String EQ():{Token t1;String s,t2;}
+ {
+ t2=E()
+ s= EQSign() {return t2 +s;}
+
+ }
+
+String EQSign():{Token t1,t2;String s, s1;}
+{
+ <EQUAL>  
+ s=AfterSign(){ return "==" +s;}
+| 
+ <NOTEQUAL>
+ s=AfterSign(){ return "!=" +s;}
+|
+ <BIG>
+ s1=orEqual()
+ s=AfterSign(){ if (s1=="")
+					return "> "+s;
+				return ">="+s;
+			  }
+|
+ <SMALL>
+ s1=orEqual()
+s=AfterSign(){ if (s1=="")
+					return "<"+s;
+				return "<="+s;
+			 }
+}
+
+String orEqual () : {}
+{
+ <EQUAL> {return "=";}
+|
+ {} {return "";}
+}
+
+String AfterSign () : {Token t1;String s; }
+{
+
+ s=E() {return s;}
+}
+
+String If () : {String t1,t2,t3,res;}
+{
+<IF>
+t1=Expression()
+t2=expCon()
+t3=expIfCon()
+<OK>{res="if("+t1+") {"+t2+"\n}\n"+t3;
+			 return res;
+	}
+}
+
+ String expIfCon():{String t1,t2,t3,res=" ";}
+ {
+ <BUT>
+  t1=Expression()
+  t2=expCon(){res+="\nelse if("+t1+") {"+t2+"\n}\n";}
+  t3=expIfCon(){res+=t3;return res;}
+  |
+  <ELSE>
+  t2=expCon(){res+="else {\n"+t2+"\n}";}
+  t3=expIfCon(){res+=t3;return res;}
+  |
+  {}{return res;}
+ }
+
 
 
 
