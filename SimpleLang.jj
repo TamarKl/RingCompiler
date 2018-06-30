@@ -1,23 +1,27 @@
 
-PARSER_BEGIN(SimpleLang)
+PARSER_BEGIN(RingCompiler)
 
-public class SimpleLang {
+public class RingCompiler {
     public static int counterBreaks=0;
     public static String code = "";
     public static String javaCodeStart = "";
     public static java.util.HashSet<String> symtable = new java.util.HashSet<String>();
-    public static void main(String[] args) {
-        SimpleLang p = null;
+    public static boolean if_in_while=false;
+    
+    
+    
+        public static void main(String[] args) {
+        RingCompiler p = null;
         java.io.FileWriter out = null;
         java.io.File javaTarget = null;
         
         System.out.println("Reading from file " + args[0]);
         try {
-            p = new SimpleLang(new java.io.FileInputStream(args[0]));
+            p = new RingCompiler(new java.io.FileInputStream(args[0]));
             javaTarget = new java.io.File(args[1]);
             out = new java.io.FileWriter(javaTarget);
             javaCodeStart = "import java.util.Scanner;\npublic class " + javaTarget.getName() + "{" +
-                "\npublic static void main(String[] args){\nScanner console = new Scanner(System.in);\n";
+                "\npublic static void main(String[] args){\nScanner console = new Scanner(System.in);\nboolean if_break_value_system_arg=false;";
         }
         catch(java.io.FileNotFoundException e) {
             System.out.println("Error in reading file");
@@ -50,7 +54,7 @@ public class SimpleLang {
 
 }
 
-PARSER_END(SimpleLang)
+PARSER_END(RingCompiler)
 
 SKIP: {
     " "
@@ -143,7 +147,13 @@ String Assign() : {Token t;
     <EQUAL>
     exp = E()       {
                             if(!symtable.contains(t.image.toLowerCase()))
-                                symtable.add(t.image.toLowerCase());
+                    {
+			    	if(!t.image.toLowerCase().equals("if_break_value_system_arg"))
+                                	symtable.add(t.image.toLowerCase());
+                    else
+                        throw new ParseException("name: if_break_value_system_arg can't be used as a variable. ");
+                        
+                    }
                             return "\n" + t.image.toLowerCase() + " = " + 
                                                 exp + ";"; 
                     }
@@ -253,7 +263,7 @@ t2=expConWhile(counter)
 <END>{      
             if (counterBreaks>0){
                 counterBreaks--;
-                res="while ("+t1+") {\n"+t2+"\n}\nbreak;\n";
+                res="while ("+t1+") {\n"+t2+"\n}\nif(if_break_value_system_arg)\n{\nif_break_value_system_arg=false;\nbreak;\n}\n";
                 return res;
             }
             res="while ("+t1+") {\n"+t2+"\n}\n";
@@ -313,7 +323,7 @@ t=<MINUS><NUMBER>
                     throw new ParseException("exit command exception");
                 counterBreaks=Integer.parseInt(t.image)-1;
                 if(Integer.parseInt(t.image)!=0)
-                    return "\nbreak;";
+                    return "\nif_break_value_system_arg=true;\nbreak;";
                 return "";
 
 }
@@ -428,8 +438,3 @@ t3=expIfCon()
   |
   {}{return res;}
  }
-
-
-
-
-
